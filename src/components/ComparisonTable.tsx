@@ -218,7 +218,10 @@ export function ComparisonTable({
             {rows.map((row) => {
               const hasSim = !isNaN(row.sim)
               const error =
-                hasSim && row.theo > 0
+                hasSim &&
+                typeof row.theo === "number" &&
+                !isNaN(row.theo) &&
+                row.theo > 0
                   ? Math.abs((row.sim - row.theo) / row.theo) * 100
                   : null
               return (
