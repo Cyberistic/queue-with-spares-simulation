@@ -55,6 +55,12 @@ export class QueueSimulation {
   // For 1D
   timeWeightedCustomers: number = 0
   lastCustomerCount: number = 0
+  timeWeightedQueueLength: number = 0
+  lastQueueLength: number = 0
+  timeWeightedBusyServers: number = 0
+  lastBusyServers: number = 0
+  timeWeightedAvailability: number = 0
+  lastAvailability: number = 1
 
   // For 2D
   timeWeightedFailedServers: number = 0
@@ -83,10 +89,37 @@ export class QueueSimulation {
     this.lastStateChangeTime = 0
     this.timeWeightedCustomers = 0
     this.lastCustomerCount = 0
+    this.timeWeightedQueueLength = 0
+    this.lastQueueLength = 0
+    this.timeWeightedBusyServers = 0
+    this.lastBusyServers = 0
+    this.timeWeightedAvailability = 0
+    this.lastAvailability = 1
     this.timeWeightedFailedServers = 0
     this.lastFailedCount = 0
     this.blockedArrivals = 0
     this.recordState()
+  }
+
+  private getEffectiveCapacity(state: SimState): number {
+    if (this.mode === "1d") {
+      return this.params.s
+    }
+
+    const { j } = state as State2D
+    return Math.min(this.params.s, this.params.s + this.params.Y - j)
+  }
+
+  private getQueueLength(state: SimState): number {
+    return Math.max(0, state.n - this.getEffectiveCapacity(state))
+  }
+
+  private getBusyServers(state: SimState): number {
+    return Math.min(state.n, this.getEffectiveCapacity(state))
+  }
+
+  private getAvailabilityIndicator(state: SimState): number {
+    return this.getEffectiveCapacity(state) > 0 ? 1 : 0
   }
 
   getStateKey(state: SimState): string {
@@ -105,12 +138,18 @@ export class QueueSimulation {
     if (dt > 0) {
       this.timeInStates.set(key, (this.timeInStates.get(key) || 0) + dt)
       this.timeWeightedCustomers += this.lastCustomerCount * dt
+      this.timeWeightedQueueLength += this.lastQueueLength * dt
+      this.timeWeightedBusyServers += this.lastBusyServers * dt
+      this.timeWeightedAvailability += this.lastAvailability * dt
       if (this.mode === "2d") {
         this.timeWeightedFailedServers += this.lastFailedCount * dt
       }
     }
 
     this.lastCustomerCount = this.currentState.n
+    this.lastQueueLength = this.getQueueLength(this.currentState)
+    this.lastBusyServers = this.getBusyServers(this.currentState)
+    this.lastAvailability = this.getAvailabilityIndicator(this.currentState)
     if (this.mode === "2d") {
       this.lastFailedCount = (this.currentState as State2D).j
     }
@@ -240,11 +279,17 @@ export class QueueSimulation {
       (this.timeInStates.get(prevKey) || 0) + timeInPrev
     )
     this.timeWeightedCustomers += this.lastCustomerCount * timeInPrev
+    this.timeWeightedQueueLength += this.lastQueueLength * timeInPrev
+    this.timeWeightedBusyServers += this.lastBusyServers * timeInPrev
+    this.timeWeightedAvailability += this.lastAvailability * timeInPrev
     if (this.mode === "2d") {
       this.timeWeightedFailedServers += this.lastFailedCount * timeInPrev
     }
 
     this.lastCustomerCount = this.currentState.n
+    this.lastQueueLength = this.getQueueLength(this.currentState)
+    this.lastBusyServers = this.getBusyServers(this.currentState)
+    this.lastAvailability = this.getAvailabilityIndicator(this.currentState)
     if (this.mode === "2d") {
       this.lastFailedCount = (this.currentState as State2D).j
     }
@@ -310,6 +355,14 @@ export class QueueSimulation {
     return totalWeighted / this.currentTime
   }
 
+  getAverageQueueLength(): number {
+    if (this.currentTime === 0) return 0
+    const dt = this.currentTime - this.lastStateChangeTime
+    const totalWeighted =
+      this.timeWeightedQueueLength + this.lastQueueLength * dt
+    return totalWeighted / this.currentTime
+  }
+
   // Get average number of failed servers (2D only)
   getAverageFailedServers(): number {
     if (this.mode !== "2d" || this.currentTime === 0) return 0
@@ -323,6 +376,34 @@ export class QueueSimulation {
   getThroughput(): number {
     if (this.currentTime === 0) return 0
     return this.totalServices / this.currentTime
+  }
+
+  getAvailability(): number {
+    if (this.currentTime === 0) return 0
+    const dt = this.currentTime - this.lastStateChangeTime
+    const totalWeighted =
+      this.timeWeightedAvailability + this.lastAvailability * dt
+    return totalWeighted / this.currentTime
+  }
+
+  getServerUtilization(): number {
+    if (this.currentTime === 0 || this.params.s <= 0) return 0
+    const dt = this.currentTime - this.lastStateChangeTime
+    const totalWeighted =
+      this.timeWeightedBusyServers + this.lastBusyServers * dt
+    return totalWeighted / (this.currentTime * this.params.s)
+  }
+
+  getAverageTimeInSystem(): number {
+    const throughput = this.getThroughput()
+    if (throughput <= 0) return 0
+    return this.getAverageCustomers() / throughput
+  }
+
+  getAverageTimeInQueue(): number {
+    const throughput = this.getThroughput()
+    if (throughput <= 0) return 0
+    return this.getAverageQueueLength() / throughput
   }
 
   // Get blocking probability

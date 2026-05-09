@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect } from "react"
+import { useMemo, useCallback } from "react"
 import {
   ReactFlow,
   Background,
@@ -7,8 +7,6 @@ import {
   type Edge,
   Handle,
   Position,
-  useNodesState,
-  useEdgesState,
   MarkerType,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
@@ -17,113 +15,205 @@ import type {
   SimulationMode,
   SimState,
 } from "@/lib/simulation"
+import { Latex } from "@/components/Latex"
+
+function edgeStyle(color: string, active: boolean, width = 1.5) {
+  return {
+    stroke: color,
+    strokeWidth: active ? width + 0.75 : width,
+    opacity: active ? 1 : 0.6,
+  }
+}
 
 interface FlowCanvasProps {
   params: SimulationParams
   mode: SimulationMode
   currentState: SimState | null
   stateVisits: Map<string, number>
+  selectedState: SimState | null
+  onNodeClick: (state: SimState) => void
+  layoutVersion: number
 }
 
+/* ─── 1-D node ─── */
 function StateNode1D({
   data,
 }: {
   data: {
     label: string
     active: boolean
+    selected: boolean
     visits: number
     maxVisits: number
     rateIn: string
     rateOut: string
+    onClick: () => void
   }
 }) {
   const intensity = data.maxVisits > 0 ? data.visits / data.maxVisits : 0
   return (
     <div
-      className={`relative rounded-lg border-2 px-4 py-2 font-mono text-xs font-semibold transition-all duration-300 ${
+      onClick={data.onClick}
+      className={`relative min-w-[88px] cursor-pointer rounded-lg border-2 px-3 py-2 font-mono text-xs font-semibold transition-all duration-300 ${
         data.active
-          ? "scale-110 border-primary bg-primary/20 text-primary shadow-lg shadow-primary/20"
-          : "border-border bg-card text-foreground"
+          ? "z-10 scale-110 border-primary bg-primary/20 text-primary shadow-lg shadow-primary/20"
+          : data.selected
+            ? "z-10 scale-105 border-chart-3 bg-chart-3/20 text-chart-3 shadow-lg shadow-chart-3/20"
+            : "border-border bg-card text-foreground hover:border-primary/50"
       }`}
       style={{
-        backgroundColor: data.active
-          ? undefined
-          : `rgba(var(--primary-rgb), ${0.05 + intensity * 0.15})`,
+        backgroundColor:
+          data.active || data.selected
+            ? undefined
+            : `rgba(var(--primary-rgb), ${0.05 + intensity * 0.15})`,
       }}
     >
+      {/* Arrival handles — top corners */}
       <Handle
         type="target"
         position={Position.Left}
-        className="!h-2 !w-2 !bg-primary"
+        id="tl"
+        className="!h-1.5 !w-1.5 !border-0 !bg-primary/50"
+        style={{ top: 6, bottom: "auto" }}
       />
-      <div className="text-center">
-        <div>{data.label}</div>
-        {data.rateIn && (
-          <div className="mt-0.5 text-[9px] text-muted-foreground">
-            {data.rateIn}
-          </div>
-        )}
-      </div>
       <Handle
         type="source"
         position={Position.Right}
-        className="!h-2 !w-2 !bg-primary"
+        id="tr"
+        className="!h-1.5 !w-1.5 !border-0 !bg-primary/50"
+        style={{ top: 6, bottom: "auto" }}
       />
+
+      {/* Service handles — bottom corners */}
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="br"
+        className="!h-1.5 !w-1.5 !border-0 !bg-chart-2/50"
+        style={{ top: "auto", bottom: 6 }}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="bl"
+        className="!h-1.5 !w-1.5 !border-0 !bg-chart-2/50"
+        style={{ top: "auto", bottom: 6 }}
+      />
+
+      <div className="text-center">
+        <div>{data.label}</div>
+        {data.rateIn && (
+          <Latex className="mt-0.5 block text-[9px] text-muted-foreground">
+            {data.rateIn}
+          </Latex>
+        )}
+      </div>
     </div>
   )
 }
 
+/* ─── 2-D node ─── */
 function StateNode2D({
   data,
 }: {
   data: {
     label: string
     active: boolean
+    selected: boolean
     visits: number
     maxVisits: number
     n: number
     j: number
+    onClick: () => void
   }
 }) {
   const intensity = data.maxVisits > 0 ? data.visits / data.maxVisits : 0
   return (
     <div
-      className={`relative flex h-14 w-14 flex-col items-center justify-center rounded-md border-2 font-mono text-[10px] font-semibold transition-all duration-300 ${
+      onClick={data.onClick}
+      className={`relative flex h-14 w-14 cursor-pointer flex-col items-center justify-center rounded-md border-2 font-mono text-[10px] font-semibold transition-all duration-300 ${
         data.active
           ? "z-10 scale-110 border-primary bg-primary/20 text-primary shadow-lg shadow-primary/20"
-          : "border-border bg-card text-foreground"
+          : data.selected
+            ? "z-10 scale-105 border-chart-3 bg-chart-3/20 text-chart-3 shadow-lg shadow-chart-3/20"
+            : "border-border bg-card text-foreground hover:border-primary/50"
       }`}
       style={{
-        backgroundColor: data.active
-          ? undefined
-          : `rgba(var(--primary-rgb), ${0.05 + intensity * 0.2})`,
+        backgroundColor:
+          data.active || data.selected
+            ? undefined
+            : `rgba(var(--primary-rgb), ${0.05 + intensity * 0.2})`,
       }}
     >
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!h-1.5 !w-1.5 !bg-primary"
-      />
+      {/* Arrival: top-right out → top-left in  (arc above) */}
       <Handle
         type="target"
         position={Position.Left}
-        className="!h-1.5 !w-1.5 !bg-primary"
+        id="atl"
+        className="!h-1 !w-1 !border-0 !bg-primary/50"
+        style={{ top: 6, bottom: "auto" }}
       />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="atr"
+        className="!h-1 !w-1 !border-0 !bg-primary/50"
+        style={{ top: 6, bottom: "auto" }}
+      />
+
+      {/* Service: bottom-left out → bottom-right in  (arc below) */}
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="abr"
+        className="!h-1 !w-1 !border-0 !bg-chart-2/50"
+        style={{ top: "auto", bottom: 6 }}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="abl"
+        className="!h-1 !w-1 !border-0 !bg-chart-2/50"
+        style={{ top: "auto", bottom: 6 }}
+      />
+
+      {/* Failure: bottom-right out → top-right in  (arc right side) */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="fr"
+        className="!h-1 !w-1 !border-0 !bg-destructive/50"
+        style={{ left: "auto", right: 6 }}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="fbr"
+        className="!h-1 !w-1 !border-0 !bg-destructive/50"
+        style={{ left: "auto", right: 6 }}
+      />
+
+      {/* Repair: top-left out → bottom-left in  (arc left side) */}
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="rbl"
+        className="!h-1 !w-1 !border-0 !bg-chart-3/50"
+        style={{ left: 6, right: "auto" }}
+      />
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="rtl"
+        className="!h-1 !w-1 !border-0 !bg-chart-3/50"
+        style={{ left: 6, right: "auto" }}
+      />
+
       <div className="text-center leading-tight">
         <div>
           ({data.n},{data.j})
         </div>
       </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!h-1.5 !w-1.5 !bg-primary"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!h-1.5 !w-1.5 !bg-primary"
-      />
     </div>
   )
 }
@@ -138,10 +228,10 @@ export function FlowCanvas({
   mode,
   currentState,
   stateVisits,
+  selectedState,
+  onNodeClick,
+  layoutVersion,
 }: FlowCanvasProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
-
   const maxVisits = useMemo(() => {
     if (stateVisits.size === 0) return 1
     return Math.max(...stateVisits.values())
@@ -151,33 +241,35 @@ export function FlowCanvas({
     const { M, s, K, lambda, mu } = params
     const nodeList: Node[] = []
     const edgeList: Edge[] = []
-    const spacing = 140
+    const spacing = 190
+    const xOffset = (K * spacing) / 2
 
     for (let n = 0; n <= K; n++) {
-      const arrivalRate = n < K ? (M - n) * lambda : 0
-      const serviceRate = n > 0 ? Math.min(n, s) * mu : 0
-
       nodeList.push({
         id: `n${n}`,
         type: "state1d",
-        position: { x: n * spacing, y: 0 },
+        position: { x: n * spacing - xOffset, y: 0 },
         data: {
           label: `S${n}`,
           active: currentState?.n === n,
+          selected: selectedState?.n === n,
           visits: stateVisits.get(`${n}`) || 0,
           maxVisits,
-          rateIn: n < K ? `λ=${arrivalRate.toFixed(2)}` : "",
-          rateOut: n > 0 ? `μ=${serviceRate.toFixed(2)}` : "",
+          rateIn: "",
+          rateOut: "",
+          onClick: () => onNodeClick({ n }),
         },
       })
 
+      // Arrival: n → n+1  (top-right of n  →  top-left of n+1)
       if (n < K) {
         edgeList.push({
           id: `e-${n}-${n + 1}`,
           source: `n${n}`,
           target: `n${n + 1}`,
+          sourceHandle: "tr",
+          targetHandle: "tl",
           type: "default",
-          animated: currentState?.n === n,
           label: `${((M - n) * lambda).toFixed(2)}`,
           labelStyle: {
             fontSize: 10,
@@ -186,18 +278,24 @@ export function FlowCanvas({
           },
           labelBgStyle: { fill: "var(--background)", fillOpacity: 0.8 },
           labelBgPadding: [4, 4],
-          markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
-          style: { stroke: "var(--primary)", strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 12,
+            height: 12,
+          },
+          style: edgeStyle("var(--primary)", currentState?.n === n, 2),
         })
       }
 
+      // Service: n → n-1  (bottom-left of n  →  bottom-right of n-1)
       if (n > 0) {
         edgeList.push({
           id: `e-${n}-${n - 1}`,
           source: `n${n}`,
           target: `n${n - 1}`,
+          sourceHandle: "bl",
+          targetHandle: "br",
           type: "default",
-          animated: currentState?.n === n,
           label: `${(Math.min(n, s) * mu).toFixed(2)}`,
           labelStyle: {
             fontSize: 10,
@@ -206,14 +304,18 @@ export function FlowCanvas({
           },
           labelBgStyle: { fill: "var(--background)", fillOpacity: 0.8 },
           labelBgPadding: [4, 4],
-          markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
-          style: { stroke: "var(--chart-2)", strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 12,
+            height: 12,
+          },
+          style: edgeStyle("var(--chart-2)", currentState?.n === n, 2),
         })
       }
     }
 
     return { nodes: nodeList, edges: edgeList }
-  }, [params, currentState, stateVisits, maxVisits])
+  }, [params, currentState, selectedState, stateVisits, maxVisits, onNodeClick])
 
   const build2D = useCallback((): { nodes: Node[]; edges: Edge[] } => {
     const { s, K, Y } = params
@@ -222,116 +324,135 @@ export function FlowCanvas({
     const edgeList: Edge[] = []
     const xSpacing = 90
     const ySpacing = 90
+    const xOffset = (K * xSpacing) / 2
+    const yOffset = (maxJ * ySpacing) / 2
 
     for (let n = 0; n <= K; n++) {
       for (let j = 0; j <= maxJ; j++) {
         const cj = Math.min(s, s + Y - j)
         const isActive = currentState?.n === n && (currentState as any)?.j === j
+        const isSelected =
+          selectedState?.n === n && (selectedState as any)?.j === j
 
         nodeList.push({
           id: `s-${n}-${j}`,
           type: "state2d",
-          position: { x: n * xSpacing, y: j * ySpacing },
+          position: { x: n * xSpacing - xOffset, y: j * ySpacing - yOffset },
           data: {
             label: `(${n},${j})`,
             active: isActive,
+            selected: isSelected,
             visits: stateVisits.get(`${n},${j}`) || 0,
             maxVisits,
             n,
             j,
+            onClick: () => onNodeClick({ n, j }),
           },
         })
 
-        // Arrival: (n,j) -> (n+1,j)
+        // Arrival: (n,j) → (n+1,j)  top-right → top-left  (arc above)
         if (n < K) {
           edgeList.push({
             id: `a-${n}-${j}`,
             source: `s-${n}-${j}`,
             target: `s-${n + 1}-${j}`,
+            sourceHandle: "atr",
+            targetHandle: "atl",
             type: "default",
-            animated: isActive,
-            markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10 },
-            style: { stroke: "var(--primary)", strokeWidth: 1.5, opacity: 0.6 },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 10,
+              height: 10,
+            },
+            style: edgeStyle("var(--primary)", isActive),
           })
         }
 
-        // Service: (n,j) -> (n-1,j)
+        // Service: (n,j) → (n-1,j)  bottom-left → bottom-right  (arc below)
         if (n > 0 && cj > 0) {
           edgeList.push({
             id: `sv-${n}-${j}`,
             source: `s-${n}-${j}`,
             target: `s-${n - 1}-${j}`,
+            sourceHandle: "abl",
+            targetHandle: "abr",
             type: "default",
-            animated: isActive,
-            markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10 },
-            style: { stroke: "var(--chart-2)", strokeWidth: 1.5, opacity: 0.6 },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 10,
+              height: 10,
+            },
+            style: edgeStyle("var(--chart-2)", isActive),
           })
         }
 
-        // Failure: (n,j) -> (n,j+1)
+        // Failure: (n,j) → (n,j+1)  bottom-right → top-right  (arc right)
         if (j < maxJ) {
           edgeList.push({
             id: `f-${n}-${j}`,
             source: `s-${n}-${j}`,
             target: `s-${n}-${j + 1}`,
+            sourceHandle: "fbr",
+            targetHandle: "fr",
             type: "default",
-            animated: isActive,
-            markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10 },
-            style: {
-              stroke: "var(--destructive)",
-              strokeWidth: 1.5,
-              opacity: 0.6,
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 10,
+              height: 10,
             },
+            style: edgeStyle("var(--destructive)", isActive),
           })
         }
 
-        // Repair: (n,j) -> (n,j-1)
+        // Repair: (n,j) → (n,j-1)  top-left → bottom-left  (arc left)
         if (j > 0) {
           edgeList.push({
             id: `r-${n}-${j}`,
             source: `s-${n}-${j}`,
             target: `s-${n}-${j - 1}`,
+            sourceHandle: "rtl",
+            targetHandle: "rbl",
             type: "default",
-            animated: isActive,
-            markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10 },
-            style: { stroke: "var(--chart-3)", strokeWidth: 1.5, opacity: 0.6 },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 10,
+              height: 10,
+            },
+            style: edgeStyle("var(--chart-3)", isActive),
           })
         }
       }
     }
 
     return { nodes: nodeList, edges: edgeList }
-  }, [params, currentState, stateVisits, maxVisits])
+  }, [params, currentState, selectedState, stateVisits, maxVisits, onNodeClick])
 
-  useEffect(() => {
-    const { nodes: newNodes, edges: newEdges } =
-      mode === "1d" ? build1D() : build2D()
-    setNodes(newNodes)
-    setEdges(newEdges)
-  }, [
-    mode,
-    params,
-    currentState,
-    stateVisits,
-    build1D,
-    build2D,
-    setNodes,
-    setEdges,
-  ])
+  const { nodes, edges } = useMemo(
+    () => (mode === "1d" ? build1D() : build2D()),
+    [mode, build1D, build2D]
+  )
+
+  const flowKey = useMemo(
+    () => `${mode}-${params.K}-${params.s}-${params.Y}-${layoutVersion}`,
+    [mode, params.K, params.s, params.Y, layoutVersion]
+  )
 
   return (
     <div className="relative h-full flex-1 bg-muted/30">
       <ReactFlow
+        key={flowKey}
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
         maxZoom={2}
         attributionPosition="bottom-left"
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        panOnDrag
       >
         <Background color="var(--border)" gap={20} size={1} />
         <Controls className="!border-border !bg-card !shadow-md" />

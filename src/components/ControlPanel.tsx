@@ -17,6 +17,8 @@ interface ControlPanelProps {
   setMaxCycles: (cycles: number) => void
   infiniteMode: boolean
   setInfiniteMode: (inf: boolean) => void
+  nonVisualMode: boolean
+  setNonVisualMode: (enabled: boolean) => void
   currentCycle: number
 }
 
@@ -28,7 +30,7 @@ function Slider({
   step,
   onChange,
   disabled,
-  format = (v) => v.toString(),
+  parse = Number,
 }: {
   label: string
   value: number
@@ -37,17 +39,35 @@ function Slider({
   step: number
   onChange: (v: number) => void
   disabled?: boolean
-  format?: (v: number) => string
+  parse?: (value: string) => number
 }) {
+  const handleInputChange = (rawValue: string) => {
+    const nextValue = parse(rawValue)
+    if (Number.isNaN(nextValue)) return
+    const clamped = Math.min(max, Math.max(min, nextValue))
+    onChange(clamped)
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-foreground/80">
           {label}
         </label>
-        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs tabular-nums">
-          {format(value)}
-        </span>
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={
+            Number.isInteger(step)
+              ? value
+              : value.toFixed(step < 0.01 ? 3 : step < 0.1 ? 2 : 1)
+          }
+          onChange={(e) => handleInputChange(e.target.value)}
+          disabled={disabled}
+          className="w-16 rounded bg-muted px-1.5 py-0.5 text-right font-mono text-xs text-foreground tabular-nums ring-1 ring-transparent transition outline-none focus:ring-border"
+        />
       </div>
       <input
         type="range"
@@ -79,6 +99,8 @@ export function ControlPanel({
   setMaxCycles,
   infiniteMode,
   setInfiniteMode,
+  nonVisualMode,
+  setNonVisualMode,
   currentCycle,
 }: ControlPanelProps) {
   const updateParam = useCallback(
@@ -153,7 +175,7 @@ export function ControlPanel({
           max={5}
           step={0.01}
           onChange={(v) => updateParam("lambda", v)}
-          format={(v) => v.toFixed(2)}
+          parse={(v) => Number(v)}
         />
         <Slider
           label="Service Rate (μ)"
@@ -162,7 +184,7 @@ export function ControlPanel({
           max={10}
           step={0.1}
           onChange={(v) => updateParam("mu", v)}
-          format={(v) => v.toFixed(1)}
+          parse={(v) => Number(v)}
         />
 
         {mode === "2d" && (
@@ -186,7 +208,7 @@ export function ControlPanel({
               max={2}
               step={0.001}
               onChange={(v) => updateParam("alpha", v)}
-              format={(v) => v.toFixed(3)}
+              parse={(v) => Number(v)}
             />
             <Slider
               label="Repair Rate (β)"
@@ -195,7 +217,7 @@ export function ControlPanel({
               max={10}
               step={0.01}
               onChange={(v) => updateParam("beta", v)}
-              format={(v) => v.toFixed(2)}
+              parse={(v) => Number(v)}
             />
           </>
         )}
@@ -215,7 +237,7 @@ export function ControlPanel({
           max={5}
           step={0.1}
           onChange={setSpeed}
-          format={(v) => `${v.toFixed(1)}x`}
+          parse={(v) => Number(v)}
         />
 
         <div className="flex items-center gap-2">
@@ -235,16 +257,33 @@ export function ControlPanel({
             Infinite
           </button>
           {!infiniteMode && (
-            <div className="flex flex-1 items-center gap-2">
-              <label className="text-xs text-muted-foreground">Cycles:</label>
-              <input
-                type="number"
-                value={maxCycles}
-                onChange={(e) =>
-                  setMaxCycles(Math.max(1, Number(e.target.value)))
-                }
-                className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs tabular-nums"
-              />
+            <div className="flex flex-1 flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground">Cycles:</label>
+                <input
+                  type="number"
+                  value={maxCycles}
+                  onChange={(e) =>
+                    setMaxCycles(Math.max(1, Number(e.target.value)))
+                  }
+                  className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs tabular-nums"
+                />
+              </div>
+              <button
+                onClick={() => setNonVisualMode(!nonVisualMode)}
+                className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                  nonVisualMode
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                <span className="flex h-3 w-3 items-center justify-center rounded-full border border-current">
+                  {nonVisualMode && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  )}
+                </span>
+                Non-visual run
+              </button>
             </div>
           )}
         </div>
